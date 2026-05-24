@@ -1,0 +1,34 @@
+#!/bin/bash
+# Privat-Tresor schließen
+
+CONF="$HOME/.config/ai-os/tresor.conf"
+source "$CONF" 2>/dev/null
+
+MAPPER="privat-tresor-user"
+AUTO="${1}"
+
+if ! mountpoint -q "$TRESOR_MOUNT" 2>/dev/null; then
+  [ "$AUTO" != "--auto" ] && \
+    kdialog --title "Tresor" --msgbox "🔒 Tresor ist bereits geschlossen." 2>/dev/null
+  exit 0
+fi
+
+# Offene Dateien prüfen
+OPEN_FILES=$(lsof +D "$TRESOR_MOUNT" 2>/dev/null | grep -v "^COMMAND" | wc -l)
+if [ "$OPEN_FILES" -gt 0 ] && [ "$AUTO" != "--auto" ]; then
+  kdialog --title "Tresor schließen" \
+    --yesno "⚠️ Es sind noch $OPEN_FILES Dateien geöffnet.\nTrotzdem schließen?" 2>/dev/null
+  [ $? -ne 0 ] && exit 0
+fi
+
+# Kill Timer
+[ -f /tmp/.tresor-lock-timer ] && kill $(cat /tmp/.tresor-lock-timer) 2>/dev/null
+
+umount "$TRESOR_MOUNT" 2>/dev/null || umount -l "$TRESOR_MOUNT" 2>/dev/null
+cryptsetup luksClose "$MAPPER" 2>/dev/null
+
+logger -t privat-tresor "CLOSED user=$(whoami) auto=$AUTO time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+[ "$AUTO" = "--auto" ] && \
+  kdialog --title "Tresor" --passivepopup "🔒 Tresor automatisch gesperrt (30-Min-Limit)." 5 2>/dev/null || \
+  kdialog --title "Tresor" --passivepopup "🔒 Tresor gesperrt." 3 2>/dev/null

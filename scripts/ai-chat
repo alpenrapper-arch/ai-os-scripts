@@ -1,0 +1,124 @@
+#!/bin/bash
+# KI-Chat — Backend-konfigurierbar, mit Memory und Datenschutz-Warnung
+
+CONFIG="$HOME/.config/ai-os/backend.conf"
+MEMORY_FILE="$HOME/.config/ai-os/ki-memory.txt"
+MEMORY_ENABLED="$HOME/.config/ai-os/.memory-enabled"
+TRESOR_CONF="$HOME/.config/ai-os/tresor.conf"
+
+if [ ! -f "$CONFIG" ]; then
+  echo "KI nicht eingerichtet. Starte Setup..."
+  ai-setup
+  [ ! -f "$CONFIG" ] && exit 1
+fi
+
+source "$CONFIG"
+
+# Tresor-Warnung
+if [ -f "$TRESOR_CONF" ]; then
+  source "$TRESOR_CONF"
+  echo ""
+  echo "╔══════════════════════════════════════════════════════╗"
+  echo "║  ⚠️  DATENSCHUTZ-HINWEIS                             ║"
+  echo "║  Dateien aus ~/Privat/ NICHT in diesen Chat einfügen ║"
+  echo "║  Die KI würde diese Daten an externe Server senden!  ║"
+  echo "╚══════════════════════════════════════════════════════╝"
+  echo ""
+fi
+
+# Memory laden
+SYSTEM_PROMPT="Du bist ein hilfreicher KI-Assistent auf AI-OS."
+if [ -f "$MEMORY_ENABLED" ] && [ -f "$MEMORY_FILE" ]; then
+  MEM_CONTENT=$(cat "$MEMORY_FILE")
+  if [ -n "$MEM_CONTENT" ]; then
+    SYSTEM_PROMPT="Du bist ein hilfreicher KI-Assistent auf AI-OS. Du erinnerst dich an folgende Informationen über den User:
+
+$MEM_CONTENT
+
+Nutze dieses Wissen um personalisiert zu antworten."
+    echo "🧠 Memory geladen ($(wc -l < "$MEMORY_FILE") Zeilen)"
+  fi
+fi
+
+echo "🤖 AI-OS Chat — $BACKEND ($MODEL)"
+[ -f "$MEMORY_ENABLED" ] && echo "🧠 Memory: Aktiv" || echo "🧠 Memory: Deaktiviert"
+echo "Befehle: 'exit' beenden | 'tresor' Tresor öffnen | 'memory' Memory anzeigen | 'forget' Memory löschen"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Conversation-History für diesen Chat (in-memory)
+MESSAGES="[]"
+FULL_CONVERSATION=""
+
+while true; do
+  echo -n "Du: "
+  read -r INPUT
+  [ "$INPUT" = "exit" ] && break
+  [ "$INPUT" = "tresor" ] && tresor-open && continue
+  [ "$INPUT" = "memory" ] && echo "📋 Memory:" && cat "$MEMORY_FILE" 2>/dev/null || echo "(leer)" && continue
+  [ "$INPUT" = "forget" ] && > "$MEMORY_FILE" && echo "🗑️ Memory gelöscht." && continue
+  [ -z "$INPUT" ] && continue
+
+  FULL_CONVERSATION="$FULL_CONVERSATION\nUser: $INPUT"
+
+  # Messages-Array aufbauen (mit System-Prompt + History + neue Eingabe)
+  MESSAGES=$(python3 -c "
+import json, sys
+system = sys.argv[1]
+history = json.loads(sys.argv[2])
+new_msg = sys.argv[3]
+messages = [{'role':'system','content':system}] + history + [{'role':'user','content':new_msg}]
+print(json.dumps(messages))
+" "$SYSTEM_PROMPT" "$MESSAGES" "$INPUT" 2>/dev/null)
+
+  PAYLOAD=$(python3 -c "
+import json, sys
+messages = json.loads(sys.argv[1])
+print(json.dumps({
+  'model': '$MODEL',
+  'messages': messages,
+  'max_tokens': 1000
+}))
+" "$MESSAGES" 2>/dev/null)
+
+  if [ "$BACKEND" = "local" ]; then
+    # Ollama
+    RESPONSE=$(curl -s http://localhost:11434/api/chat \
+      -d "$(echo "$PAYLOAD" | python3 -c "import sys,json; d=json.load(sys.stdin); d['stream']=False; print(json.dumps(d))")" 2>/dev/null | \
+      python3 -c "import sys,json; print(json.load(sys.stdin).get('message',{}).get('content','Fehler'))" 2>/dev/null)
+  else
+    RESPONSE=$(curl -s "$ENDPOINT/chat/completions" \
+      -H "Authorization: Bearer $API_KEY" \
+      -H "Content-Type: application/json" \
+      -d "$PAYLOAD" 2>/dev/null | \
+      python3 -c "import sys,json; d=json.load(sys.stdin); print(d['choices'][0]['message']['content'])" 2>/dev/null)
+  fi
+
+  [ -z "$RESPONSE" ] && RESPONSE="(Fehler — keine Antwort vom Server)"
+  echo "🤖 KI: $RESPONSE"
+  echo ""
+
+  FULL_CONVERSATION="$FULL_CONVERSATION\nKI: $RESPONSE"
+
+  # History für nächste Anfrage aktualisieren
+  MESSAGES=$(python3 -c "
+import json, sys
+history = json.loads(sys.argv[1])
+user_msg = sys.argv[2]
+ai_msg = sys.argv[3]
+history.append({'role':'user','content':user_msg})
+history.append({'role':'assistant','content':ai_msg})
+# Max 10 Nachrichten in History halten
+if len(history) > 20:
+    history = history[-20:]
+print(json.dumps(history))
+" "$MESSAGES" "$INPUT" "$RESPONSE" 2>/dev/null)
+done
+
+# Memory nach Chat aktualisieren (wenn Memory aktiv und Gespräch stattfand)
+if [ -f "$MEMORY_ENABLED" ] && [ -n "$FULL_CONVERSATION" ]; then
+  echo ""
+  echo "🧠 Memory wird aktualisiert..."
+  ai-memory-update "$FULL_CONVERSATION" &
+fi
+
+echo "Chat beendet."

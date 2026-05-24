@@ -1,0 +1,41 @@
+#!/bin/bash
+# Privat-Tresor öffnen
+
+CONF="$HOME/.config/ai-os/tresor.conf"
+[ ! -f "$CONF" ] && kdialog --error "Kein Tresor eingerichtet.\nBitte zuerst 'Tresor erstellen' ausführen." 2>/dev/null && exit 1
+
+source "$CONF"
+
+# Bereits gemountet?
+if mountpoint -q "$TRESOR_MOUNT" 2>/dev/null; then
+  kdialog --title "Tresor" --msgbox "🔓 Tresor ist bereits geöffnet.\n📂 $TRESOR_MOUNT" 2>/dev/null
+  dolphin "$TRESOR_MOUNT" &
+  exit 0
+fi
+
+PASS=$(kdialog --title "Tresor öffnen" \
+  --password "🔒 Tresor-Passwort eingeben:" 2>/dev/null)
+[ $? -ne 0 ] && exit 0
+
+MAPPER="privat-tresor-user"
+echo -n "$PASS" | cryptsetup luksOpen "$TRESOR_FILE" "$MAPPER" - 2>/dev/null
+if [ $? -ne 0 ]; then
+  kdialog --error "❌ Falsches Passwort!" 2>/dev/null
+  # Fehlgeschlagener Versuch im Audit-Log
+  logger -t privat-tresor "FAILED_OPEN user=$(whoami) time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  exit 1
+fi
+
+mount /dev/mapper/$MAPPER "$TRESOR_MOUNT" 2>/dev/null
+chmod 700 "$TRESOR_MOUNT"
+
+# Auto-Lock Timer (30 Min)
+(sleep 1800 && tresor-close --auto 2>/dev/null) &
+echo $! > /tmp/.tresor-lock-timer
+
+logger -t privat-tresor "OPENED user=$(whoami) time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# Tresor in Dolphin öffnen
+dolphin "$TRESOR_MOUNT" &
+
+kdialog --title "Tresor geöffnet" --passivepopup "🔓 Tresor ist geöffnet.\nAuto-Lock in 30 Minuten." 5 2>/dev/null

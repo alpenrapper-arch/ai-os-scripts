@@ -1,0 +1,135 @@
+#!/bin/bash
+# AI-OS Nutzungsbedingungen — muss beim ersten Start akzeptiert werden
+
+AGB_ACCEPTED="$HOME/.config/ai-os/.agb-accepted"
+mkdir -p "$HOME/.config/ai-os"
+
+[ -f "$AGB_ACCEPTED" ] && exit 0
+
+# AGB-Text anzeigen (scrollbar via kdialog textbox)
+AGB_TEXT=$(cat << 'EOF'
+AI-OS — NUTZUNGSBEDINGUNGEN UND DATENSCHUTZERKLÄRUNG
+Version 1.0 | Stand: 2026
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+§ 1 — GELTUNGSBEREICH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Diese Nutzungsbedingungen gelten für AI-OS und alle
+integrierten KI-Funktionen (Assistent, Tresor, Systemautomatisierung).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+§ 2 — KI-NUTZUNG UND EXTERNE DIENSTE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Wenn du ein Cloud-KI-Backend verwendest (DeepSeek,
+Claude, OpenAI), gelten zusätzlich die Datenschutz-
+bestimmungen des jeweiligen Anbieters:
+
+  • DeepSeek: https://www.deepseek.com/privacy
+  • Claude (Anthropic): https://www.anthropic.com/privacy
+  • OpenAI: https://openai.com/policies/privacy-policy
+
+WICHTIG: Gib KEINE personenbezogenen Daten Dritter
+in den KI-Chat ein, ohne deren ausdrückliche
+Einwilligung (Art. 6 DSGVO).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+§ 3 — PRIVAT-TRESOR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Der verschlüsselte Privat-Tresor bietet:
+
+  ✅ AES-256-XTS Verschlüsselung (LUKS2)
+  ✅ Kein KI-Zugriff (technisch erzwungen)
+  ✅ Audit-Log aller Zugriffsversuche
+  ✅ Konform mit DSGVO Art. 32 (Verschlüsselung)
+
+GARANTIE: Die KI kann NIEMALS auf Dateien im
+Privat-Tresor zugreifen, solange der Tresor
+gesperrt ist. Dies ist auf Kernel-Ebene erzwungen
+und kann nicht durch Software-Updates verändert
+werden ohne dein Zutun.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+§ 4 — DATENSCHUTZ (DSGVO)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Verantwortlicher im Sinne der DSGVO:
+Du als Nutzer dieses Systems bist selbst der
+Verantwortliche für die von dir verarbeiteten Daten.
+
+AI-OS selbst:
+  • Sendet KEINE Telemetriedaten
+  • Speichert KEINE Daten auf externen Servern
+  • Erstellt KEINE Nutzerprofile
+  • Hat KEINEN Fernzugriff auf dein System
+
+Deine Pflichten als Verantwortlicher (Art. 24 DSGVO):
+  • Verarbeite personenbezogene Daten nur rechtmäßig
+  • Sichere personenbezogene Daten im Tresor
+  • Informiere betroffene Personen über Datenverarbeitung
+  • Lösche Daten wenn nicht mehr benötigt
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+§ 5 — HAFTUNG
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AI-OS wird bereitgestellt "wie es ist", ohne
+Gewährleistung. Der Entwickler haftet nicht für:
+
+  • Datenverlust durch vergessenes Tresor-Passwort
+  • Fehler oder Falschinformationen der KI
+  • Schäden durch missbräuchliche KI-Nutzung
+  • Verstöße gegen Drittanbieter-Nutzungsbedingungen
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+§ 6 — EINWILLIGUNG KI-VERARBEITUNG
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Mit der Nutzung des KI-Assistenten stimmst du zu:
+
+  • Deine Eingaben werden an den gewählten KI-Anbieter
+    übertragen und dort verarbeitet
+  • Diese Einwilligung kann jederzeit widerrufen werden
+    (KI-System wechseln → Lokales Modell / Offline)
+  • Cloud-Anbieter können Chats für Training nutzen
+    (Opt-out in den jeweiligen Kontoeinstellungen)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+§ 7 — OPEN SOURCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AI-OS basiert auf Kubuntu 24.04 LTS (GNU/Linux).
+Die Quellcodes der verwendeten Open-Source-Komponenten
+sind unter ihren jeweiligen Lizenzen verfügbar.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MIT KLICK AUF "AKZEPTIEREN" bestätigst du:
+  1. Diese Nutzungsbedingungen gelesen zu haben
+  2. Die Datenschutzerklärung zu verstehen
+  3. Als Verantwortlicher für deine Daten zu handeln
+
+EOF
+)
+
+# AGB als temporäre Datei speichern (kdialog textbox braucht Datei)
+TMP_AGB=$(mktemp /tmp/ai-os-agb-XXXXXX.txt)
+echo "$AGB_TEXT" > "$TMP_AGB"
+
+# AGB-Dialog anzeigen
+kdialog --title "AI-OS — Nutzungsbedingungen" \
+  --textbox "$TMP_AGB" 700 500 2>/dev/null
+RESULT=$?
+
+rm -f "$TMP_AGB"
+
+if [ $RESULT -ne 0 ]; then
+  # Abgelehnt
+  kdialog --title "AI-OS" \
+    --warningcontinuecancel "⚠️ Ohne Zustimmung sind KI-Funktionen deaktiviert.\n\nDas Betriebssystem kann ohne KI verwendet werden.\nBeim nächsten Start wirst du erneut gefragt." 2>/dev/null
+  exit 1
+fi
+
+# Akzeptiert — mit Zeitstempel speichern
+echo "ACCEPTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$AGB_ACCEPTED"
+echo "VERSION=1.0" >> "$AGB_ACCEPTED"
+echo "USER=$(whoami)" >> "$AGB_ACCEPTED"
+chmod 600 "$AGB_ACCEPTED"
+
+logger -t ai-os "AGB_ACCEPTED user=$(whoami) time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+exit 0

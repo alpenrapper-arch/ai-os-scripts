@@ -1,0 +1,88 @@
+#!/bin/bash
+# AI-OS Update — lädt neue Skripte von GitHub ohne neues ISO
+
+REPO="alpenrapper-arch/ai-os-scripts"
+RAW_BASE="https://raw.githubusercontent.com/$REPO/main"
+VERSION_URL="$RAW_BASE/version.txt"
+LOCAL_VERSION_FILE="/etc/ai-os/version.txt"
+SCRIPTS_DIR="/usr/local/bin"
+
+echo "🔄 AI-OS Update-Prüfung..."
+
+# Aktuelle Version
+LOCAL_VER=$(grep VERSION "$LOCAL_VERSION_FILE" 2>/dev/null | cut -d= -f2 || echo "0.0.0")
+
+# Neueste Version von GitHub
+REMOTE_VERSION=$(curl -s "$VERSION_URL" 2>/dev/null)
+REMOTE_VER=$(echo "$REMOTE_VERSION" | grep VERSION | cut -d= -f2)
+
+if [ -z "$REMOTE_VER" ]; then
+  echo "❌ Keine Verbindung zu GitHub möglich."
+  exit 1
+fi
+
+echo "Installiert: v$LOCAL_VER | Verfügbar: v$REMOTE_VER"
+
+if [ "$LOCAL_VER" = "$REMOTE_VER" ]; then
+  echo "✅ AI-OS ist aktuell (v$LOCAL_VER)"
+  exit 0
+fi
+
+# Update verfügbar
+SCRIPTS=$(echo "$REMOTE_VERSION" | grep SCRIPTS | cut -d= -f2)
+CHANGELOG=$(echo "$REMOTE_VERSION" | grep CHANGELOG | cut -d= -f2)
+
+echo ""
+echo "🆕 Update verfügbar: v$LOCAL_VER → v$REMOTE_VER"
+echo "📋 $CHANGELOG"
+echo ""
+
+# Bestätigung (wenn interaktiv)
+if [ -t 0 ]; then
+  read -r -p "Update jetzt installieren? [j/N] " CONFIRM
+  [[ ! "$CONFIRM" =~ ^[jJyY] ]] && echo "Abgebrochen." && exit 0
+fi
+
+# Backup der alten Skripte
+BACKUP_DIR="/var/backups/ai-os/v$LOCAL_VER"
+mkdir -p "$BACKUP_DIR"
+
+# Skripte updaten
+echo "📥 Lade Skripte..."
+IFS=',' read -ra SCRIPT_LIST <<< "$SCRIPTS"
+UPDATED=0
+FAILED=0
+
+for SCRIPT in "${SCRIPT_LIST[@]}"; do
+  SCRIPT=$(echo "$SCRIPT" | tr -d ' ')
+  URL="$RAW_BASE/scripts/$SCRIPT"
+
+  # Backup
+  [ -f "$SCRIPTS_DIR/$SCRIPT" ] && cp "$SCRIPTS_DIR/$SCRIPT" "$BACKUP_DIR/"
+
+  # Download
+  TMP=$(mktemp)
+  if curl -sf "$URL" -o "$TMP" 2>/dev/null; then
+    mv "$TMP" "$SCRIPTS_DIR/$SCRIPT"
+    chmod +x "$SCRIPTS_DIR/$SCRIPT"
+    echo "  ✅ $SCRIPT"
+    ((UPDATED++))
+  else
+    rm -f "$TMP"
+    echo "  ⚠️  $SCRIPT (übersprungen)"
+    ((FAILED++))
+  fi
+done
+
+# Desktop-Einträge updaten (optional)
+DESKTOP_URL="$RAW_BASE/desktop"
+DESKTOP_DIR="/etc/skel/Desktop"
+
+# Version speichern
+mkdir -p /etc/ai-os
+echo "$REMOTE_VERSION" > "$LOCAL_VERSION_FILE"
+
+echo ""
+echo "✅ Update abgeschlossen: $UPDATED Skripte aktualisiert"
+[ $FAILED -gt 0 ] && echo "⚠️  $FAILED Skripte fehlgeschlagen (Backup: $BACKUP_DIR)"
+echo "Version: v$REMOTE_VER"

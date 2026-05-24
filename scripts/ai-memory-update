@@ -1,0 +1,48 @@
+#!/bin/bash
+# KI-Memory aktualisieren nach Gespräch
+
+MEMORY_FILE="$HOME/.config/ai-os/ki-memory.txt"
+CONFIG="$HOME/.config/ai-os/backend.conf"
+[ ! -f "$CONFIG" ] && exit 0
+source "$CONFIG"
+
+# Nur wenn Memory aktiviert
+[ ! -f "$HOME/.config/ai-os/.memory-enabled" ] && exit 0
+
+CONVERSATION="$1"
+[ -z "$CONVERSATION" ] && exit 0
+
+CURRENT_MEMORY=$(cat "$MEMORY_FILE" 2>/dev/null || echo "")
+
+# KI bittet um Memory-Update (kurze Zusammenfassung)
+PAYLOAD=$(python3 -c "
+import json, sys
+conv = sys.argv[1]
+mem = sys.argv[2]
+prompt = '''Du bist ein Gedächtnis-Manager. Analysiere das folgende Gespräch und extrahiere NUR neue, wichtige Fakten über den User (Name, Vorlieben, Projekte, Infos die du dir merken solltest).
+Antworte NUR mit den neuen Fakten als kurze Liste, max 5 Punkte. Keine Wiederholungen aus dem bestehenden Memory.
+
+BESTEHENDES MEMORY:
+''' + mem + '''
+
+NEUES GESPRÄCH:
+''' + conv
+
+print(json.dumps({
+  'model': '$MODEL',
+  'messages': [{'role':'user','content': prompt}],
+  'max_tokens': 300
+}))
+" "$CONVERSATION" "$CURRENT_MEMORY" 2>/dev/null)
+
+NEW_FACTS=$(curl -s "$ENDPOINT/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "$PAYLOAD" 2>/dev/null | \
+  python3 -c "import sys,json; d=json.load(sys.stdin); print(d['choices'][0]['message']['content'])" 2>/dev/null)
+
+if [ -n "$NEW_FACTS" ] && [ "$NEW_FACTS" != "null" ]; then
+  echo "--- $(date -u +%Y-%m-%d) ---" >> "$MEMORY_FILE"
+  echo "$NEW_FACTS" >> "$MEMORY_FILE"
+  echo "" >> "$MEMORY_FILE"
+fi

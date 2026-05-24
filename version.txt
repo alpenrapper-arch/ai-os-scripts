@@ -1,0 +1,4 @@
+VERSION=1.1.0
+DATE=2026-05-25
+SCRIPTS=ai-agb,ai-setup,ai-chat,ai-memory-update,tresor-create,tresor-open,tresor-close,tresor-status,ai-os-update
+CHANGELOG=Erster Release: AGB, KI-Auswahl, Memory, Privat-Tresor

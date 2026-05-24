@@ -1,0 +1,87 @@
+#!/bin/bash
+# AI-OS Ersteinrichtung — AGB → KI-Auswahl → Memory → Tresor
+
+CONFIG_DIR="$HOME/.config/ai-os"
+CONFIG_FILE="$CONFIG_DIR/backend.conf"
+SETUP_DONE="$CONFIG_DIR/.setup-complete"
+
+[ -f "$SETUP_DONE" ] && exit 0
+mkdir -p "$CONFIG_DIR"
+
+# 1. AGBs
+ai-agb
+if [ $? -ne 0 ]; then
+  notify-send "AI-OS" "KI-Funktionen deaktiviert. Beim nächsten Start erneut gefragt." 2>/dev/null
+  exit 0
+fi
+
+# 2. KI-System wählen
+CHOICE=$(kdialog --title "AI-OS — KI-System wählen" \
+  --menu "Welches KI-System möchtest du verwenden?\n\n(Kann später über '⚙️ KI-System einrichten' geändert werden)" \
+  "local"    "🖥️  Lokal (Ollama) — 100% Offline, keine Daten verlassen den PC" \
+  "deepseek" "🌐 DeepSeek — ~0,001€/Anfrage, sehr leistungsstark, empfohlen" \
+  "claude"   "🧠 Claude (Anthropic) — Höchste Qualität, ~0,01€/Anfrage" \
+  "openai"   "💬 OpenAI (ChatGPT) — Bekannt, viele Modelle verfügbar" \
+  2>/dev/null)
+[ $? -ne 0 ] && exit 0
+
+case "$CHOICE" in
+  deepseek)
+    API_KEY=$(kdialog --title "DeepSeek API-Key" \
+      --inputbox "DeepSeek API-Key eingeben:\n(https://platform.deepseek.com/api_keys)" "" 2>/dev/null)
+    ENDPOINT="https://api.deepseek.com/v1"; MODEL="deepseek-chat" ;;
+  claude)
+    API_KEY=$(kdialog --title "Claude API-Key" \
+      --inputbox "Anthropic API-Key eingeben:\n(https://console.anthropic.com)" "" 2>/dev/null)
+    ENDPOINT="https://api.anthropic.com/v1"; MODEL="claude-haiku-4-5-20251001" ;;
+  openai)
+    API_KEY=$(kdialog --title "OpenAI API-Key" \
+      --inputbox "OpenAI API-Key eingeben:\n(https://platform.openai.com/api-keys)" "" 2>/dev/null)
+    ENDPOINT="https://api.openai.com/v1"; MODEL="gpt-4o-mini" ;;
+  local)
+    API_KEY="ollama"; ENDPOINT="http://localhost:11434/v1"; MODEL="llama3.2" ;;
+esac
+[ $? -ne 0 ] && exit 0
+
+cat > "$CONFIG_FILE" << EOF
+BACKEND=$CHOICE
+API_KEY=$API_KEY
+ENDPOINT=$ENDPOINT
+MODEL=$MODEL
+CONFIGURED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+EOF
+chmod 600 "$CONFIG_FILE"
+
+# 3. Memory einrichten
+kdialog --title "KI-Memory einrichten?" \
+  --yesno "Soll die KI sich an frühere Gespräche erinnern?\n\n🧠 Was Memory tut:\n• Merkt sich deinen Namen, Projekte, Vorlieben\n• Jedes Gespräch baut auf dem letzten auf\n• KI kennt deinen Kontext sofort\n\n🔒 Memory & Datenschutz:\n• Memory-Datei: ~/.config/ai-os/ki-memory.txt\n• Nur du kannst sie lesen/löschen (chmod 600)\n• Liegt AUSSERHALB des Tresors (KI kann darauf zugreifen)\n• Du kannst im Chat 'forget' tippen → Memory sofort löschen\n\n💡 Empfehlung: Aktivieren für bessere KI-Erfahrung" 2>/dev/null
+
+if [ $? -eq 0 ]; then
+  touch "$CONFIG_DIR/.memory-enabled"
+  touch "$CONFIG_DIR/ki-memory.txt"
+  chmod 600 "$CONFIG_DIR/ki-memory.txt"
+
+  # Optional: Startwissen eingeben
+  INITIAL=$(kdialog --title "Startwissen für die KI (optional)" \
+    --inputbox "Was soll die KI über dich wissen?\n(z.B. 'Ich heiße Markus, arbeite als Techniker, spreche Deutsch')\n\nKann leer gelassen werden:" "" 2>/dev/null)
+
+  if [ -n "$INITIAL" ]; then
+    echo "--- Erstes Setup $(date -u +%Y-%m-%d) ---" > "$CONFIG_DIR/ki-memory.txt"
+    echo "$INITIAL" >> "$CONFIG_DIR/ki-memory.txt"
+    echo "" >> "$CONFIG_DIR/ki-memory.txt"
+  fi
+  MEMORY_STATUS="✅ Aktiv"
+else
+  MEMORY_STATUS="❌ Deaktiviert"
+fi
+
+# 4. Privat-Tresor
+kdialog --title "Privat-Tresor einrichten?" \
+  --yesno "Möchtest du einen verschlüsselten Privat-Tresor einrichten?\n\n🔒 AES-256 (LUKS2) — DSGVO Art. 32 konform\n🤖 KI hat KEINEN Zugriff (Kernel-Ebene)\n📋 Jeder Zugriffsversuch wird protokolliert\n\nKann auch später über Desktop-Button eingerichtet werden." 2>/dev/null
+[ $? -eq 0 ] && tresor-create
+
+touch "$SETUP_DONE"
+TRESOR_STATUS=$([ -f "$CONFIG_DIR/tresor.conf" ] && echo "✅ Aktiv" || echo "❌ Nicht eingerichtet")
+
+kdialog --title "AI-OS bereit!" \
+  --msgbox "🎉 AI-OS Einrichtung abgeschlossen!\n\n🤖 KI: $CHOICE ($MODEL)\n🧠 Memory: $MEMORY_STATUS\n🔒 Tresor: $TRESOR_STATUS\n\nKI starten: Desktop-Button '🤖 KI-Chat' oder Terminal: ai-chat\nMemory anzeigen: Im Chat 'memory' tippen\nMemory löschen: Im Chat 'forget' tippen" 2>/dev/null
