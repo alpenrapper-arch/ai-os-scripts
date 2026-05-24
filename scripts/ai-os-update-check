@@ -1,0 +1,75 @@
+#!/bin/bash
+# AI-OS Update-Check — läuft im Hintergrund via systemd Timer
+# Prüft GitHub auf neue Version und zeigt KDE-Benachrichtigung
+
+REPO="alpenrapper-arch/ai-os-scripts"
+RAW_BASE="https://raw.githubusercontent.com/$REPO/main"
+LOCAL_VERSION_FILE="/etc/ai-os/version.txt"
+NOTIFIED_FILE="/var/cache/ai-os/last-notified-version"
+
+LOCAL_VER=$(grep VERSION "$LOCAL_VERSION_FILE" 2>/dev/null | cut -d= -f2 || echo "0.0.0")
+
+# GitHub prüfen
+REMOTE_VERSION=$(curl -sf --max-time 10 "$RAW_BASE/version.txt" 2>/dev/null)
+[ -z "$REMOTE_VERSION" ] && exit 0
+
+REMOTE_VER=$(echo "$REMOTE_VERSION" | grep "^VERSION=" | cut -d= -f2)
+CHANGELOG=$(echo "$REMOTE_VERSION" | grep "^CHANGELOG=" | cut -d= -f2)
+
+[ -z "$REMOTE_VER" ] && exit 0
+[ "$LOCAL_VER" = "$REMOTE_VER" ] && exit 0
+
+# Bereits über diese Version informiert?
+LAST_NOTIFIED=$(cat "$NOTIFIED_FILE" 2>/dev/null)
+[ "$LAST_NOTIFIED" = "$REMOTE_VER" ] && exit 0
+
+# Neue Version gefunden — alle eingeloggten User benachrichtigen
+mkdir -p /var/cache/ai-os
+echo "$REMOTE_VER" > "$NOTIFIED_FILE"
+
+logger -t ai-os-update "Neue Version verfügbar: v$LOCAL_VER → v$REMOTE_VER"
+
+# Alle aktiven Desktop-Sessions finden und Benachrichtigung senden
+while IFS= read -r USER_LINE; do
+  USERNAME=$(echo "$USER_LINE" | awk '{print $1}')
+  DISPLAY=$(echo "$USER_LINE" | awk '{print $5}' | grep -o ':[0-9]*' | head -1)
+  DBUS=$(echo "$USER_LINE" | awk '{print $5}' | grep -o 'DBUS_SESSION_BUS_ADDRESS=[^ ]*' | head -1)
+
+  [ -z "$DISPLAY" ] && DISPLAY=":0"
+
+  # DBUS_SESSION_BUS_ADDRESS aus User-Umgebung holen
+  USER_PID=$(pgrep -u "$USERNAME" plasmashell 2>/dev/null | head -1)
+  [ -z "$USER_PID" ] && continue
+
+  USER_DBUS=$(cat /proc/$USER_PID/environ 2>/dev/null | tr '\0' '\n' | grep DBUS_SESSION_BUS_ADDRESS | head -1)
+  [ -z "$USER_DBUS" ] && continue
+
+  # Benachrichtigung als User senden
+  su -c "
+    export DISPLAY=$DISPLAY
+    export $USER_DBUS
+    notify-send \
+      --app-name='AI-OS Update' \
+      --icon=system-software-update \
+      --urgency=normal \
+      --expire-time=0 \
+      --action='update=Jetzt updaten' \
+      '🆕 AI-OS Update verfügbar' \
+      'Version v$REMOTE_VER ist verfügbar (aktuell: v$LOCAL_VER)\n\n$CHANGELOG\n\nKlicke auf den Desktop-Button oder führe ai-os-update aus.'
+  " "$USERNAME" 2>/dev/null
+
+  # Zusätzlich: Desktop-Datei als sichtbaren Hinweis anlegen
+  su -c "
+    cat > /home/$USERNAME/Desktop/UPDATE-VERFUEGBAR.desktop << 'EOF'
+[Desktop Entry]
+Name=🆕 UPDATE VERFÜGBAR — v$REMOTE_VER
+Comment=$CHANGELOG
+Exec=bash -c 'pkexec ai-os-update && rm -f ~/Desktop/UPDATE-VERFUEGBAR.desktop'
+Icon=system-software-update
+Terminal=true
+Type=Application
+EOF
+    chmod 755 /home/$USERNAME/Desktop/UPDATE-VERFUEGBAR.desktop
+  " "$USERNAME" 2>/dev/null
+
+done < <(who | grep -v "^$")
